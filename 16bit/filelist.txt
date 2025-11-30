@@ -1,0 +1,14 @@
+bdru_kit001_16bit_mono.wav
+cras_kit001_16bit_mono.wav
+hiht_kit001_16bit_mono.wav
+ohht_kit001_16bit_mono.wav
+perc1_kit001_16bit_mono.wav
+perc2_kit001_16bit_mono.wav
+perc3_kit001_16bit_mono.wav
+rbel_kit001_16bit_mono.wav
+ride_kit001_16bit_mono.wav
+rim_kit001_16bit_mono.wav
+snre_kit001_16bit_mono.wav
+tom1_kit001_16bit_mono.wav
+tom2_kit001_16bit_mono.wav
+tom3_kit001_16bit_mono.wav
