@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ESP32 Full Flash Tool</title>
+    <style>
+        :root { --bg: #121212; --card: #1e1e1e; --accent: #00e5ff; --text: #e0e0e0; --success: #00c853; --error: #ff1744; --warning: #ff9800; }
+        body { font-family: 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); padding: 20px; display: flex; flex-direction: column; align-items: center; min-height: 100vh; }
+        .container { background: var(--card); padding: 30px; border-radius: 8px; width: 100%; max-width: 750px; box-shadow: 0 8px 16px rgba(0,0,0,0.6); border: 1px solid #333; margin-bottom: 20px; }
+        h1 { border-bottom: 2px solid var(--accent); padding-bottom: 10px; margin-top: 0; color: var(--accent); font-size: 1.4rem; text-transform: uppercase; letter-spacing: 1px; }
+        h2 { color: var(--accent); font-size: 1.1rem; margin-bottom: 15px; margin-top: 25px; }
+        
+        .info-box { background: rgba(0, 229, 255, 0.1); border: 1px solid var(--accent); border-radius: 4px; padding: 15px; margin-bottom: 20px; font-size: 0.9rem; }
+        .info-box strong { color: var(--accent); }
+        
+        .row { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 20px; }
+        .full { grid-column: 1 / -1; }
+        
+        label { display: block; margin-bottom: 5px; font-size: 0.85rem; color: #aaa; font-weight: bold; }
+        input, select { width: 100%; padding: 10px; background: #2a2a2a; border: 1px solid #444; color: #fff; border-radius: 4px; box-sizing: border-box; }
+        input:focus, select:focus { border-color: var(--accent); outline: none; }
+        input[type="file"] { padding: 8px; }
+        
+        button { width: 100%; padding: 12px; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; text-transform: uppercase; transition: 0.2s; }
+        #btnConnect { background: #333; color: var(--accent); border: 1px solid var(--accent); }
+        #btnConnect:hover { background: rgba(0, 229, 255, 0.1); }
+        #btnFlash { background: var(--accent); color: #000; margin-top: 10px; }
+        #btnFlash:disabled { background: #444; color: #777; cursor: not-allowed; }
+        #btnErase { background: #333; color: var(--error); border: 1px solid var(--error); margin-bottom: 10px; }
+        #btnErase:hover { background: rgba(255, 23, 68, 0.1); }
+        #btnErase:disabled { background: #444; color: #777; cursor: not-allowed; border-color: #444; }
+        
+        .file-entry { background: #2a2a2a; padding: 12px; border-radius: 4px; margin-bottom: 10px; border: 1px solid #444; display: grid; grid-template-columns: 120px 1fr auto; gap: 10px; align-items: center; }
+        .file-entry input[type="text"] { padding: 8px; }
+        .file-entry input[type="file"] { padding: 6px; }
+        .file-entry button { width: auto; padding: 8px 15px; background: var(--error); }
+        
+        .add-file-btn { background: #333; color: var(--success); border: 1px solid var(--success); margin-bottom: 15px; }
+        .add-file-btn:hover { background: rgba(0, 200, 83, 0.1); }
+        
+        .preset-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 20px; }
+        .preset-btn { background: #333; color: var(--warning); border: 1px solid var(--warning); padding: 10px; }
+        .preset-btn:hover { background: rgba(255, 152, 0, 0.1); }
+        
+        .progress-box { background: #333; height: 8px; border-radius: 4px; margin: 20px 0; overflow: hidden; }
+        .progress-bar { height: 100%; width: 0%; background: var(--success); transition: width 0.1s; }
+        
+        #log { background: #000; font-family: 'Consolas', monospace; padding: 15px; height: 250px; overflow-y: auto; font-size: 0.8rem; border: 1px solid #333; border-radius: 4px; color: #0f0; white-space: pre-wrap; }
+        
+        .file-status { font-size: 0.75rem; color: #888; margin-top: 3px; }
+        .file-status.loaded { color: var(--success); }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>⚡ ESP32 Full Flash Tool</h1>
+    
+    <div class="info-box">
+        <strong>💡 Sobre esta ferramenta:</strong><br>
+        Use para gravar ESP32 zerado com partições customizadas. Permite múltiplos arquivos .bin em diferentes offsets (bootloader, partitions, nvs, firmware, etc).
+    </div>
+
+    <div class="row">
+        <div>
+            <label>Baud Rate</label>
+            <select id="baudRate">
+                <option value="115200">115200 (Seguro)</option>
+                <option value="460800">460800</option>
+                <option value="921600" selected>921600 (Rápido)</option>
+            </select>
+        </div>
+        <div style="display: flex; align-items: flex-end;">
+            <button id="btnConnect">🔌 1. Conectar ESP32</button>
+        </div>
+    </div>
+
+    <hr style="border-color: #333; margin: 20px 0;">
+
+    <h2>📋 Presets Rápidos</h2>
+    <div class="preset-buttons">
+        <button class="preset-btn" id="btnPresetArduino">Arduino IDE Padrão</button>
+        <button class="preset-btn" id="btnPresetPlatformIO">PlatformIO Padrão</button>
+    </div>
+
+    <h2>📦 Arquivos para Gravar</h2>
+    
+    <details style="margin-bottom: 15px; background: rgba(255, 152, 0, 0.1); padding: 12px; border-radius: 4px; border: 1px solid var(--warning);">
+        <summary style="cursor: pointer; font-weight: bold; color: var(--warning); user-select: none;">📖 Guia de Offsets Comuns (clique para expandir)</summary>
+        <div style="margin-top: 10px; font-size: 0.85rem; line-height: 1.6;">
+            <strong style="color: var(--accent);">Offsets Padrão ESP32:</strong><br><br>
+            <code style="background: #000; padding: 2px 6px; border-radius: 3px; color: #0f0;">0x1000</code> → <strong>Bootloader</strong> (bootloader.bin)<br>
+            <code style="background: #000; padding: 2px 6px; border-radius: 3px; color: #0f0;">0x8000</code> → <strong>Partition Table</strong> (partitions.bin / partition-table.bin)<br>
+            <code style="background: #000; padding: 2px 6px; border-radius: 3px; color: #0f0;">0xe000</code> → <strong>Boot App</strong> (boot_app0.bin) - Apenas PlatformIO<br>
+            <code style="background: #000; padding: 2px 6px; border-radius: 3px; color: #0f0;">0x10000</code> → <strong>Firmware Principal</strong> (firmware.bin / app.bin)<br><br>
+            
+            <strong style="color: var(--accent);">Offsets Opcionais:</strong><br><br>
+            <code style="background: #000; padding: 2px 6px; border-radius: 3px; color: #0f0;">0x210000</code> → <strong>SPIFFS/LittleFS</strong> (sistema de arquivos)<br>
+            <code style="background: #000; padding: 2px 6px; border-radius: 3px; color: #0f0;">0x3d0000</code> → <strong>NVS</strong> (Non-Volatile Storage)<br><br>
+            
+            <strong style="color: var(--warning);">💡 Dica:</strong> Os offsets podem variar dependendo da sua configuração de partições. Verifique no arquivo <code>partitions.csv</code> do seu projeto.
+        </div>
+    </details>
+    
+    <div id="fileList"></div>
+    <button class="add-file-btn" id="btnAddFile">➕ Adicionar Arquivo</button>
+
+    <button id="btnErase" disabled>🗑️ Apagar Flash Completa (Opcional)</button>
+    <button id="btnFlash" disabled>🚀 2. Gravar Todos os Arquivos</button>
+
+    <div class="progress-box"><div id="bar" class="progress-bar"></div></div>
+    <div id="log">Aguardando conexão...</div>
+</div>
+
+<script type="module">
+    import { Transport, ESPLoader } from 'https://unpkg.com/esptool-js@0.5.4/bundle.js';
+
+    let device = null;
+    let transport = null;
+    let esploader = null;
+    let fileEntries = [];
+
+    const logDiv = document.getElementById('log');
+    const bar = document.getElementById('bar');
+    const btnConnect = document.getElementById('btnConnect');
+    const btnFlash = document.getElementById('btnFlash');
+    const btnErase = document.getElementById('btnErase');
+    const btnAddFile = document.getElementById('btnAddFile');
+    const fileList = document.getElementById('fileList');
+
+    const log = (msg) => {
+        console.log(msg);
+        logDiv.innerHTML += `> ${msg}\n`;
+        logDiv.scrollTop = logDiv.scrollHeight;
+    };
+
+    // ==================== FILE MANAGEMENT ====================
+    function addFileEntry(offset = '', file = null, preset = false) {
+        const id = Date.now() + Math.random();
+        const entry = { id, offset, file };
+        fileEntries.push(entry);
+        
+        const div = document.createElement('div');
+        div.className = 'file-entry';
+        div.dataset.id = id;
+        
+        const offsetInput = document.createElement('input');
+        offsetInput.type = 'text';
+        offsetInput.placeholder = '0x1000';
+        offsetInput.value = offset;
+        offsetInput.onchange = () => {
+            entry.offset = offsetInput.value;
+        };
+        
+        const fileInput = document.createElement('input');
+        fileInput.type = 'file';
+        fileInput.accept = '.bin';
+        fileInput.onchange = (e) => {
+            entry.file = e.target.files[0];
+            updateFileStatus();
+        };
+        
+        const removeBtn = document.createElement('button');
+        removeBtn.textContent = '✕';
+        removeBtn.onclick = () => {
+            fileEntries = fileEntries.filter(e => e.id !== id);
+            div.remove();
+        };
+        
+        const statusDiv = document.createElement('div');
+        statusDiv.className = 'file-status';
+        statusDiv.style.gridColumn = '1 / -1';
+        statusDiv.textContent = file ? `✓ ${file.name}` : 'Aguardando arquivo...';
+        if (file) statusDiv.classList.add('loaded');
+        
+        div.appendChild(offsetInput);
+        div.appendChild(fileInput);
+        div.appendChild(removeBtn);
+        div.appendChild(statusDiv);
+        
+        fileList.appendChild(div);
+        
+        function updateFileStatus() {
+            if (entry.file) {
+                statusDiv.textContent = `✓ ${entry.file.name} (${(entry.file.size / 1024).toFixed(1)} KB)`;
+                statusDiv.classList.add('loaded');
+            }
+        }
+        
+        return entry;
+    }
+
+    btnAddFile.onclick = () => addFileEntry();
+
+    // ==================== PRESETS ====================
+    document.getElementById('btnPresetArduino').onclick = () => {
+        fileEntries = [];
+        fileList.innerHTML = '';
+        addFileEntry('0x1000');  // Bootloader
+        addFileEntry('0x8000');  // Partition table
+        addFileEntry('0x10000'); // Firmware
+        log('Preset Arduino IDE carregado. Selecione os 3 arquivos .bin');
+    };
+
+    document.getElementById('btnPresetPlatformIO').onclick = () => {
+        fileEntries = [];
+        fileList.innerHTML = '';
+        addFileEntry('0x1000');  // Bootloader
+        addFileEntry('0x8000');  // Partitions
+        addFileEntry('0xe000');  // Boot app
+        addFileEntry('0x10000'); // Firmware
+        log('Preset PlatformIO carregado. Selecione os 4 arquivos .bin');
+    };
+
+    // ==================== CONNECTION ====================
+    btnConnect.onclick = async () => {
+        if (!navigator.serial) return alert("Navegador incompatível. Use Chrome ou Edge Desktop.");
+
+        try {
+            log("Solicitando porta serial...");
+            
+            device = await navigator.serial.requestPort();
+            if (!device) throw new Error("Nenhum dispositivo retornado.");
+
+            log("Porta selecionada. Configurando comunicação...");
+            
+            const baud = parseInt(document.getElementById('baudRate').value);
+            
+            const term = { 
+                clean: () => {}, 
+                writeLine: (l) => log(l), 
+                write: (l) => {} 
+            };
+
+            transport = new Transport(device, true);
+            log("Transporte inicializado. Conectando ao ESP32...");
+
+            esploader = new ESPLoader({
+                transport: transport,
+                baudrate: baud,
+                terminal: term
+            });
+
+            log("Tentando handshake...");
+            log("💡 DICA: Se falhar, segure o botão BOOT do ESP32 e tente novamente.");
+
+            const chip = await esploader.main();
+            
+            log(`✅ SUCESSO: Conectado ao ${chip}`);
+
+            btnConnect.innerText = "✓ Conectado";
+            btnConnect.disabled = true;
+            btnConnect.style.borderColor = "#00c853";
+            btnConnect.style.color = "#00c853";
+            btnFlash.disabled = false;
+            btnErase.disabled = false;
+
+        } catch (e) {
+            console.error("Erro detalhado:", e);
+            log(`❌ ERRO: ${e.message}`);
+            
+            if (e.message.includes("Failed to execute 'open'") || e.message.includes("opening")) {
+                log("⚠️ A porta está em uso. Feche outros programas.");
+            } else if (e.message.includes("timeout") || e.message.includes("sync")) {
+                log("⚠️ Timeout. Segure o botão BOOT e tente novamente.");
+            }
+            
+            try {
+                if (transport) await transport.disconnect();
+            } catch {}
+            
+            device = null;
+            transport = null;
+            esploader = null;
+            btnConnect.disabled = false;
+        }
+    };
+
+    // ==================== ERASE ====================
+    btnErase.onclick = async () => {
+        if (!confirm('⚠️ ATENÇÃO: Isso vai APAGAR TODA A FLASH do ESP32!\n\nTem certeza?')) return;
+        
+        btnErase.disabled = true;
+        btnFlash.disabled = true;
+        log("Apagando flash completa...");
+        
+        try {
+            await esploader.eraseFlash();
+            log("✅ Flash apagada com sucesso!");
+        } catch (e) {
+            log(`❌ Erro ao apagar: ${e.message}`);
+        } finally {
+            btnErase.disabled = false;
+            btnFlash.disabled = false;
+        }
+    };
+
+    // ==================== FLASH ====================
+    btnFlash.onclick = async () => {
+        // Validação
+        const validEntries = fileEntries.filter(e => e.file && e.offset);
+        
+        if (validEntries.length === 0) {
+            return alert("❌ Adicione pelo menos um arquivo com offset!");
+        }
+        
+        for (const entry of validEntries) {
+            const offset = parseInt(entry.offset, 16);
+            if (isNaN(offset)) {
+                return alert(`❌ Offset inválido: ${entry.offset}\nUse formato hexadecimal como 0x1000`);
+            }
+        }
+
+        btnFlash.disabled = true;
+        btnErase.disabled = true;
+        bar.style.width = "0%";
+        bar.style.backgroundColor = "#00c853";
+        
+        log(`\n${'='.repeat(50)}`);
+        log(`Iniciando gravação de ${validEntries.length} arquivo(s)...`);
+        log(`${'='.repeat(50)}\n`);
+
+        try {
+            const fileArray = [];
+            
+            // Prepara todos os arquivos
+            for (const entry of validEntries) {
+                log(`Lendo: ${entry.file.name} -> ${entry.offset}`);
+                const content = await entry.file.arrayBuffer();
+                const offset = parseInt(entry.offset, 16);
+                
+                const uint8Array = new Uint8Array(content);
+                let binaryString = '';
+                for (let i = 0; i < uint8Array.length; i++) {
+                    binaryString += String.fromCharCode(uint8Array[i]);
+                }
+                
+                fileArray.push({ 
+                    data: binaryString, 
+                    address: offset 
+                });
+                
+                log(`  ✓ ${entry.file.name}: ${content.byteLength} bytes em ${entry.offset}`);
+            }
+            
+            log(`\nIniciando gravação...`);
+            
+            let currentFile = 0;
+            await esploader.writeFlash({
+                fileArray: fileArray,
+                flashSize: "keep",
+                eraseAll: false,
+                compress: true,
+                reportProgress: (fileIndex, written, total) => {
+                    if (fileIndex !== currentFile) {
+                        currentFile = fileIndex;
+                        log(`\nGravando arquivo ${fileIndex + 1}/${fileArray.length}...`);
+                    }
+                    
+                    const pct = Math.round((written / total) * 100);
+                    bar.style.width = `${pct}%`;
+                    
+                    if (pct % 20 === 0 || pct === 100) {
+                        log(`  Progresso: ${pct}%`);
+                    }
+                }
+            });
+
+            log(`\n${'='.repeat(50)}`);
+            log("✅ GRAVAÇÃO FINALIZADA COM SUCESSO!");
+            log(`${'='.repeat(50)}`);
+            bar.style.backgroundColor = "#00c853";
+
+            log("\nReiniciando ESP32...");
+            await transport.setDTR(false);
+            await new Promise(resolve => setTimeout(resolve, 100));
+            await transport.setRTS(true);
+            await new Promise(resolve => setTimeout(resolve, 100));
+            await transport.setRTS(false);
+            log("✅ Reset concluído. ESP32 reiniciado.\n");
+
+        } catch (e) {
+            console.error("Erro na gravação:", e);
+            log(`\n❌ ERRO NA GRAVAÇÃO: ${e.message}`);
+            bar.style.backgroundColor = "#ff1744";
+        } finally {
+            btnFlash.disabled = false;
+            btnErase.disabled = false;
+        }
+    };
+
+    // Inicia com 3 campos vazios
+    addFileEntry('0x1000');
+    addFileEntry('0x8000');
+    addFileEntry('0x10000');
+</script>
+
+</body>
+</html>

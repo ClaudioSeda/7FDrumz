@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>7F Tecnologia -  Serial Monitor</title>
+    <style>
+        :root { --bg: #121212; --card: #1e1e1e; --accent: #00e5ff; --text: #e0e0e0; --success: #00c853; --error: #ff1744; --warning: #ff9800; }
+        body { font-family: 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); padding: 20px; display: flex; flex-direction: column; align-items: center; min-height: 100vh; }
+        .container { background: var(--card); padding: 30px; border-radius: 8px; width: 100%; max-width: 1600px; box-shadow: 0 8px 16px rgba(0,0,0,0.6); border: 1px solid #333; }
+        h1 { border-bottom: 2px solid var(--accent); padding-bottom: 10px; margin-top: 0; color: var(--accent); font-size: 1.5rem; text-transform: uppercase; letter-spacing: 1px; }
+        
+        .controls { display: grid; grid-template-columns: 200px 1fr; gap: 15px; margin-bottom: 20px; align-items: end; }
+        
+        label { display: block; margin-bottom: 5px; font-size: 0.85rem; color: #aaa; font-weight: bold; }
+        select { width: 100%; padding: 10px; background: #2a2a2a; border: 1px solid #444; color: #fff; border-radius: 4px; box-sizing: border-box; }
+        select:focus { border-color: var(--accent); outline: none; }
+        
+        button { width: 100%; padding: 12px; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; text-transform: uppercase; transition: 0.2s; font-size: 0.9rem; }
+        
+        #btnConnect { background: #333; color: var(--success); border: 1px solid var(--success); }
+        #btnConnect:hover { background: rgba(0, 200, 83, 0.1); }
+        #btnConnect.active { background: var(--success); color: #000; }
+        
+        #serialOutput { background: #000; font-family: 'Consolas', monospace; padding: 15px; height: 1400px; overflow-y: auto; font-size: 0.9rem; border: 1px solid #333; border-radius: 4px; color: #ffff00; white-space: pre-wrap; margin-bottom: 15px; word-wrap: break-word; }
+        
+        .action-buttons { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr; gap: 10px; margin-bottom: 15px; }
+        
+        input[type="text"] { width: 100%; padding: 10px; background: #2a2a2a; border: 1px solid #444; color: #fff; border-radius: 4px; box-sizing: border-box; }
+        input[type="text"]:focus { border-color: var(--accent); outline: none; }
+        input[type="text"]:disabled { background: #1a1a1a; color: #666; cursor: not-allowed; }
+        
+        .btn-reset { background: #333; color: var(--accent); border: 1px solid var(--accent); }
+        .btn-reset:hover { background: rgba(0, 229, 255, 0.1); }
+        .btn-reset:disabled { background: #222; color: #555; border-color: #333; cursor: not-allowed; }
+        
+        .btn-copy { background: #333; color: var(--warning); border: 1px solid var(--warning); }
+        .btn-copy:hover { background: rgba(255, 152, 0, 0.1); }
+        .btn-copy.copied { background: var(--success); color: #000; border-color: var(--success); }
+        
+        .btn-clear { background: #333; color: var(--error); border: 1px solid var(--error); }
+        .btn-clear:hover { background: rgba(255, 23, 68, 0.1); }
+        
+        .status { font-size: 0.85rem; color: #888; margin-top: 10px; text-align: center; }
+        .status.connected { color: var(--success); }
+        .status.error { color: var(--error); }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>📟 7F Tecnologia - Serial Monitor</h1>
+    
+    <div class="controls">
+        <div>
+            <label>Baud Rate</label>
+            <select id="baudRate">
+                <option value="9600">9600</option>
+                <option value="57600">57600</option>
+                <option value="115200" selected>115200</option>
+                <option value="230400">230400</option>
+                <option value="460800">460800</option>
+                <option value="921600">921600</option>
+            </select>
+        </div>
+        <div>
+            <button id="btnConnect">▶️ Conectar</button>
+        </div>
+    </div>
+    
+    <div id="serialOutput">Aguardando conexão...</div>
+    
+    <div class="action-buttons">
+        <input type="text" id="sendInput" placeholder="Digite e pressione Enter para enviar..." disabled>
+        <button class="btn-reset" id="btnReset" disabled>🔄 Reset</button>
+        <button class="btn-copy" id="btnCopy">📋 Copiar</button>
+        <button class="btn-clear" id="btnClear">🗑️ Limpar</button>
+    </div>
+    
+    <div class="status" id="status">Desconectado</div>
+</div>
+
+<script>
+    let monitorPort = null;
+    let monitorReader = null;
+    let monitorWriter = null;
+    let isMonitoring = false;
+    let fullLog = '';
+
+    const serialOutput = document.getElementById('serialOutput');
+    const btnConnect = document.getElementById('btnConnect');
+    const btnReset = document.getElementById('btnReset');
+    const btnCopy = document.getElementById('btnCopy');
+    const btnClear = document.getElementById('btnClear');
+    const sendInput = document.getElementById('sendInput');
+    const statusDiv = document.getElementById('status');
+
+    const logSerial = (msg) => {
+        fullLog += msg;
+        serialOutput.innerHTML += msg;
+        serialOutput.scrollTop = serialOutput.scrollHeight;
+    };
+    
+    const setStatus = (msg, type = '') => {
+        statusDiv.textContent = msg;
+        statusDiv.className = 'status ' + type;
+    };
+
+    // ==================== CONNECT/DISCONNECT ====================
+    btnConnect.onclick = async () => {
+        if (!navigator.serial) {
+            alert("❌ Navegador incompatível. Use Chrome ou Edge Desktop.");
+            return;
+        }
+
+        if (isMonitoring) {
+            // Desconectar
+            isMonitoring = false;
+            
+            if (monitorReader) {
+                try { 
+                    await monitorReader.cancel();
+                    monitorReader.releaseLock();
+                } catch {}
+            }
+            if (monitorWriter) {
+                try { await monitorWriter.close(); } catch {}
+            }
+            if (monitorPort) {
+                try { 
+                    await new Promise(resolve => setTimeout(resolve, 100));
+                    await monitorPort.close(); 
+                } catch {}
+            }
+            
+            btnConnect.innerText = "▶️ Conectar";
+            btnConnect.classList.remove('active');
+            sendInput.disabled = true;
+            btnReset.disabled = true;
+            logSerial("\n[Monitor desconectado]\n");
+            setStatus("Desconectado");
+            
+            monitorPort = null;
+            monitorReader = null;
+            monitorWriter = null;
+            return;
+        }
+
+        try {
+            monitorPort = await navigator.serial.requestPort();
+            const baud = parseInt(document.getElementById('baudRate').value);
+            
+            await monitorPort.open({ baudRate: baud });
+            
+            serialOutput.innerHTML = '';
+            fullLog = '';
+            logSerial(`[Conectado em ${baud} baud]\n`);
+            logSerial(`[Aguardando dados...]\n\n`);
+            setStatus(`Conectado (${baud} baud)`, 'connected');
+            
+            isMonitoring = true;
+            btnConnect.innerText = "⏹️ Desconectar";
+            btnConnect.classList.add('active');
+            sendInput.disabled = false;
+            btnReset.disabled = false;
+            
+            await new Promise(resolve => setTimeout(resolve, 500));
+            
+            monitorReader = monitorPort.readable.getReader();
+            monitorWriter = monitorPort.writable.getWriter();
+            
+            const decoder = new TextDecoder();
+            
+            (async () => {
+                try {
+                    while (isMonitoring) {
+                        const { value, done } = await monitorReader.read();
+                        if (done || !isMonitoring) break;
+                        
+                        const text = decoder.decode(value);
+                        logSerial(text);
+                    }
+                } catch (e) {
+                    if (isMonitoring) {
+                        logSerial(`\n[Erro: ${e.message}]\n`);
+                        setStatus("Erro na leitura", 'error');
+                    }
+                } finally {
+                    try { monitorReader.releaseLock(); } catch {}
+                }
+            })();
+            
+        } catch (e) {
+            logSerial(`\n[Erro ao conectar: ${e.message}]\n`);
+            setStatus("Erro ao conectar", 'error');
+            isMonitoring = false;
+            btnConnect.innerText = "▶️ Conectar";
+            btnConnect.classList.remove('active');
+        }
+    };
+
+    // ==================== RESET ====================
+    btnReset.onclick = async () => {
+        if (!monitorPort) return;
+        
+        try {
+            logSerial("\n[Resetando ESP32...]\n");
+            
+            await monitorPort.setSignals({ dataTerminalReady: false });
+            await new Promise(resolve => setTimeout(resolve, 100));
+            await monitorPort.setSignals({ requestToSend: true });
+            await new Promise(resolve => setTimeout(resolve, 100));
+            await monitorPort.setSignals({ requestToSend: false });
+            
+            await new Promise(resolve => setTimeout(resolve, 500));
+            logSerial("[ESP32 reiniciado]\n\n");
+        } catch (e) {
+            logSerial(`[Erro ao resetar: ${e.message}]\n`);
+        }
+    };
+
+    // ==================== COPY ====================
+    btnCopy.onclick = async () => {
+        try {
+            await navigator.clipboard.writeText(fullLog);
+            
+            const originalText = btnCopy.textContent;
+            btnCopy.textContent = "✓ Copiado!";
+            btnCopy.classList.add('copied');
+            
+            setTimeout(() => {
+                btnCopy.textContent = originalText;
+                btnCopy.classList.remove('copied');
+            }, 2000);
+            
+        } catch (e) {
+            alert("Erro ao copiar: " + e.message);
+        }
+    };
+
+    // ==================== CLEAR ====================
+    btnClear.onclick = () => {
+        serialOutput.innerHTML = "";
+        fullLog = "";
+    };
+
+    // ==================== SEND ====================
+    sendInput.onkeypress = async (e) => {
+        if (e.key === 'Enter' && sendInput.value.trim()) {
+            const msg = sendInput.value + '\n';
+            try {
+                const encoder = new TextEncoder();
+                await monitorWriter.write(encoder.encode(msg));
+                logSerial(`> ${msg}`);
+                sendInput.value = '';
+            } catch (e) {
+                logSerial(`[Erro ao enviar: ${e.message}]\n`);
+            }
+        }
+    };
+</script>
+
+</body>
+</html>

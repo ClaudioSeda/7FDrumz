@@ -1,0 +1,417 @@
+
+
+<!DOCTYPE html>
+<html lang="pt-BR">
+	//7folhas tecnologia eletronica - @2025
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ESP32 Firmware Update + Serial Monitor</title>
+    <style>
+        :root { --bg: #121212; --card: #1e1e1e; --accent: #00e5ff; --text: #e0e0e0; --success: #00c853; --error: #ff1744; }
+        body { font-family: 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); padding: 20px; display: flex; flex-direction: column; align-items: center; min-height: 100vh; }
+        .container { background: var(--card); padding: 30px; border-radius: 8px; width: 100%; max-width: 650px; box-shadow: 0 8px 16px rgba(0,0,0,0.6); border: 1px solid #333; margin-bottom: 20px; }
+        h1 { border-bottom: 2px solid var(--accent); padding-bottom: 10px; margin-top: 0; color: var(--accent); font-size: 1.4rem; text-transform: uppercase; letter-spacing: 1px; }
+        h2 { color: var(--accent); font-size: 1.1rem; margin-bottom: 15px; }
+        
+        .row { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 20px; }
+        .full { grid-column: 1 / -1; }
+        
+        label { display: block; margin-bottom: 5px; font-size: 0.85rem; color: #aaa; font-weight: bold; }
+        input, select { width: 100%; padding: 10px; background: #2a2a2a; border: 1px solid #444; color: #fff; border-radius: 4px; box-sizing: border-box; }
+        input:focus, select:focus { border-color: var(--accent); outline: none; }
+        
+        button { width: 100%; padding: 12px; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; text-transform: uppercase; transition: 0.2s; }
+        #btnConnect { background: #333; color: var(--accent); border: 1px solid var(--accent); }
+        #btnConnect:hover { background: rgba(0, 229, 255, 0.1); }
+        #btnFlash { background: var(--accent); color: #000; }
+        #btnFlash:disabled { background: #444; color: #777; cursor: not-allowed; }
+        
+        #btnMonitor { background: #333; color: #4caf50; border: 1px solid #4caf50; }
+        #btnMonitor:hover { background: rgba(76, 175, 80, 0.1); }
+        #btnMonitor.active { background: #4caf50; color: #000; }
+        #btnClear { background: #333; color: #ff9800; border: 1px solid #ff9800; }
+        #btnClear:hover { background: rgba(255, 152, 0, 0.1); }
+        
+        .progress-box { background: #333; height: 8px; border-radius: 4px; margin: 20px 0; overflow: hidden; }
+        .progress-bar { height: 100%; width: 0%; background: var(--success); transition: width 0.1s; }
+        
+        #log { background: #000; font-family: 'Consolas', monospace; padding: 15px; height: 200px; overflow-y: auto; font-size: 0.8rem; border: 1px solid #333; border-radius: 4px; color: #0f0; white-space: pre-wrap; }
+        
+        #serialOutput { background: #000; font-family: 'Consolas', monospace; padding: 15px; height: 300px; overflow-y: auto; font-size: 0.85rem; border: 1px solid #333; border-radius: 4px; color: #fff; white-space: pre-wrap; margin-bottom: 15px; }
+        
+        .serial-controls { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 10px; margin-bottom: 15px; }
+        
+        .monitor-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    </style>
+</head>
+<body>
+
+<!-- FLASHER -->
+<div class="container">
+    <h1>🔧 7F TECNOLOGIA - ESP32 Web Flasher</h1>
+
+    <div class="row">
+        <div>
+            <label>Baud Rate</label>
+            <select id="baudRate">
+                <option value="115200">115200 (Lento/Seguro)</option>
+                <option value="460800">460800</option>
+                <option value="921600" selected>921600 (Rápido)</option>
+            </select>
+        </div>
+        <div style="display: flex; align-items: flex-end;">
+            <button id="btnConnect">🔌 1. Conectar</button>
+        </div>
+    </div>
+
+    <hr style="border-color: #333; margin-bottom: 20px;">
+
+    <div class="row">
+        <div class="full">
+            <label>Firmware (.bin)</label>
+            <input type="file" id="fileInput" accept=".bin">
+        </div>
+        <div class="full">
+            <label>Offset (Hex)</label>
+            <input type="text" id="offset" value="0x10000" placeholder="Ex: 0x10000">
+        </div>
+    </div>
+
+    <button id="btnFlash" disabled>🚀 2. Gravar Firmware</button>
+
+    <div class="progress-box"><div id="bar" class="progress-bar"></div></div>
+    <div id="log">Logs do sistema...</div>
+</div>
+
+<!-- SERIAL MONITOR -->
+<div class="container">
+    <h1>📟 Serial Monitor</h1>
+    
+    <div class="monitor-row">
+        <div>
+            <label>Baud Rate Monitor</label>
+            <select id="monitorBaud">
+                <option value="9600">9600</option>
+                <option value="57600">57600</option>
+                <option value="115200" selected>115200</option>
+                <option value="230400">230400</option>
+            </select>
+        </div>
+        <div style="display: flex; align-items: flex-end;">
+            <button id="btnMonitor">▶️ Iniciar Monitor</button>
+        </div>
+    </div>
+    
+    <div style="margin-top: 15px;">
+        <div id="serialOutput">Aguardando conexão...</div>
+        
+        <div class="serial-controls">
+            <input type="text" id="sendInput" placeholder="Digite e pressione Enter para enviar..." disabled>
+            <button id="btnReset" disabled>🔄 Reset ESP32</button>
+            <button id="btnClear">🗑️ Limpar</button>
+        </div>
+    </div>
+</div>
+
+<script type="module">
+    import { Transport, ESPLoader } from 'https://unpkg.com/esptool-js@0.5.4/bundle.js';
+
+    let device = null;
+    let transport = null;
+    let esploader = null;
+    
+    // Serial Monitor
+    let monitorPort = null;
+    let monitorReader = null;
+    let monitorWriter = null;
+    let isMonitoring = false;
+
+    const logDiv = document.getElementById('log');
+    const bar = document.getElementById('bar');
+    const btnConnect = document.getElementById('btnConnect');
+    const btnFlash = document.getElementById('btnFlash');
+    const serialOutput = document.getElementById('serialOutput');
+    const btnMonitor = document.getElementById('btnMonitor');
+    const btnClear = document.getElementById('btnClear');
+    const btnReset = document.getElementById('btnReset');
+    const sendInput = document.getElementById('sendInput');
+
+    const log = (msg) => {
+        console.log(msg);
+        logDiv.innerHTML += `> ${msg}\n`;
+        logDiv.scrollTop = logDiv.scrollHeight;
+    };
+    
+    const logSerial = (msg) => {
+        serialOutput.innerHTML += msg;
+        serialOutput.scrollTop = serialOutput.scrollHeight;
+    };
+
+    // ==================== FLASHER ====================
+    btnConnect.onclick = async () => {
+        if (!navigator.serial) return alert("Navegador incompatível. Use Chrome ou Edge Desktop.");
+
+        try {
+            log("Solicitando porta serial...");
+            
+            device = await navigator.serial.requestPort();
+            
+            if (!device) throw new Error("Nenhum dispositivo retornado.");
+
+            log("Porta selecionada. Configurando comunicação...");
+            
+            const baud = parseInt(document.getElementById('baudRate').value);
+            
+            const term = { 
+                clean: () => {}, 
+                writeLine: (l) => log(l), 
+                write: (l) => {} 
+            };
+
+            transport = new Transport(device, true);
+            
+            log("Transporte inicializado. Conectando ao ESP32...");
+
+            esploader = new ESPLoader({
+                transport: transport,
+                baudrate: baud,
+                terminal: term
+            });
+
+            log("Tentando handshake (pode demorar 5-10 segundos)...");
+            log("💡 DICA: Se falhar, segure o botão BOOT do ESP32 e tente novamente.");
+
+            const chip = await esploader.main();
+            
+            log(`✅ SUCESSO: Conectado ao ${chip}`);
+
+            btnConnect.innerText = "✓ Conectado";
+            btnConnect.disabled = true;
+            btnConnect.style.borderColor = "#00c853";
+            btnConnect.style.color = "#00c853";
+            btnFlash.disabled = false;
+
+        } catch (e) {
+            console.error("Erro detalhado:", e);
+            log(`❌ ERRO: ${e.message}`);
+            
+            if (e.message.includes("Failed to execute 'open'") || e.message.includes("opening")) {
+                log("⚠️ A porta está em uso. Feche: Arduino IDE, PlatformIO, Monitor Serial, etc.");
+            } else if (e.message.includes("timeout") || e.message.includes("sync")) {
+                log("⚠️ Timeout na comunicação. Tente:");
+                log("   1. Segurar o botão BOOT durante a conexão");
+                log("   2. Usar baud rate mais baixo (115200)");
+                log("   3. Usar outro cabo USB");
+            }
+            
+            try {
+                if (transport) await transport.disconnect();
+            } catch {}
+            
+            device = null;
+            transport = null;
+            esploader = null;
+            
+            btnConnect.disabled = false;
+        }
+    };
+
+    btnFlash.onclick = async () => {
+        const fileInput = document.getElementById('fileInput');
+        const offsetInput = document.getElementById('offset');
+        
+        if(!fileInput.files[0]) return alert("Selecione o arquivo .bin!");
+
+        const content = await fileInput.files[0].arrayBuffer();
+        const offset = parseInt(offsetInput.value, 16);
+
+        if(isNaN(offset)) return alert("Offset inválido! Use formato hex como 0x10000");
+
+        btnFlash.disabled = true;
+        bar.style.width = "0%";
+        bar.style.backgroundColor = "#00c853";
+        
+        log(`Iniciando gravação de ${content.byteLength} bytes em ${offsetInput.value}...`);
+
+        try {
+            const uint8Array = new Uint8Array(content);
+            let binaryString = '';
+            for (let i = 0; i < uint8Array.length; i++) {
+                binaryString += String.fromCharCode(uint8Array[i]);
+            }
+            
+            const fileArray = [{ 
+                data: binaryString, 
+                address: offset 
+            }];
+            
+            await esploader.writeFlash({
+                fileArray: fileArray,
+                flashSize: "keep",
+                eraseAll: false,
+                compress: true,
+                reportProgress: (fileIndex, written, total) => {
+                    const pct = Math.round((written / total) * 100);
+                    bar.style.width = `${pct}%`;
+                    if (pct % 10 === 0 || pct === 100) {
+                        log(`Progresso: ${pct}% (${written}/${total} bytes)`);
+                    }
+                }
+            });
+
+            log("✅ GRAVAÇÃO FINALIZADA COM SUCESSO!");
+            bar.style.backgroundColor = "#00c853";
+
+            log("Reiniciando ESP32...");
+            await transport.setDTR(false);
+            await new Promise(resolve => setTimeout(resolve, 100));
+            await transport.setRTS(true);
+            await new Promise(resolve => setTimeout(resolve, 100));
+            await transport.setRTS(false);
+            log("✅ Reset concluído. Dispositivo reiniciado.");
+
+        } catch (e) {
+            console.error("Erro na gravação:", e);
+            log(`❌ ERRO NA GRAVAÇÃO: ${e.message}`);
+            bar.style.backgroundColor = "#ff1744";
+        } finally {
+            btnFlash.disabled = false;
+        }
+    };
+
+    // ==================== SERIAL MONITOR ====================
+    btnMonitor.onclick = async () => {
+        if (!navigator.serial) return alert("Navegador incompatível. Use Chrome ou Edge Desktop.");
+
+        if (isMonitoring) {
+            // Parar monitor
+            isMonitoring = false;
+            
+            if (monitorReader) {
+                try { 
+                    await monitorReader.cancel();
+                    monitorReader.releaseLock();
+                } catch {}
+            }
+            if (monitorWriter) {
+                try {
+                    await monitorWriter.close();
+                } catch {}
+            }
+            if (monitorPort) {
+                try { 
+                    await new Promise(resolve => setTimeout(resolve, 100));
+                    await monitorPort.close(); 
+                } catch {}
+            }
+            
+            btnMonitor.innerText = "▶️ Iniciar Monitor";
+            btnMonitor.classList.remove('active');
+            sendInput.disabled = true;
+            btnReset.disabled = true;
+            logSerial("\n[Monitor desconectado]\n");
+            
+            monitorPort = null;
+            monitorReader = null;
+            monitorWriter = null;
+            return;
+        }
+
+        try {
+            monitorPort = await navigator.serial.requestPort();
+            const baud = parseInt(document.getElementById('monitorBaud').value);
+            
+            await monitorPort.open({ baudRate: baud });
+            
+            serialOutput.innerHTML = ''; // Limpa output anterior
+            logSerial(`[Conectado em ${baud} baud]\n`);
+            logSerial(`[Aguardando dados...]\n\n`);
+            
+            isMonitoring = true;
+            btnMonitor.innerText = "⏹️ Parar Monitor";
+            btnMonitor.classList.add('active');
+            sendInput.disabled = false;
+            btnReset.disabled = false;
+            
+            // Aguarda 500ms para ESP32 terminar boot garbage
+            await new Promise(resolve => setTimeout(resolve, 500));
+            
+            // Leitor de dados
+            monitorReader = monitorPort.readable.getReader();
+            
+            // Writer para enviar dados
+            monitorWriter = monitorPort.writable.getWriter();
+            
+            const decoder = new TextDecoder();
+            
+            // Loop de leitura assíncrono
+            (async () => {
+                try {
+                    while (isMonitoring) {
+                        const { value, done } = await monitorReader.read();
+                        if (done || !isMonitoring) break;
+                        
+                        const text = decoder.decode(value);
+                        logSerial(text);
+                    }
+                } catch (e) {
+                    if (isMonitoring) {
+                        logSerial(`\n[Erro: ${e.message}]\n`);
+                    }
+                } finally {
+                    try {
+                        monitorReader.releaseLock();
+                    } catch {}
+                }
+            })();
+            
+        } catch (e) {
+            logSerial(`\n[Erro ao conectar: ${e.message}]\n`);
+            isMonitoring = false;
+            btnMonitor.innerText = "▶️ Iniciar Monitor";
+            btnMonitor.classList.remove('active');
+        }
+    };
+
+    btnClear.onclick = () => {
+        serialOutput.innerHTML = "";
+    };
+
+    btnReset.onclick = async () => {
+        if (!monitorPort) return;
+        
+        try {
+            logSerial("\n[Resetando ESP32...]\n");
+            
+            // Sequência de reset via DTR/RTS
+            await monitorPort.setSignals({ dataTerminalReady: false });
+            await new Promise(resolve => setTimeout(resolve, 100));
+            await monitorPort.setSignals({ requestToSend: true });
+            await new Promise(resolve => setTimeout(resolve, 100));
+            await monitorPort.setSignals({ requestToSend: false });
+            
+            await new Promise(resolve => setTimeout(resolve, 500));
+            logSerial("[ESP32 reiniciado]\n\n");
+        } catch (e) {
+            logSerial(`[Erro ao resetar: ${e.message}]\n`);
+        }
+    };
+
+    sendInput.onkeypress = async (e) => {
+        if (e.key === 'Enter' && sendInput.value.trim()) {
+            const msg = sendInput.value + '\n';
+            try {
+                const encoder = new TextEncoder();
+                await monitorWriter.write(encoder.encode(msg));
+                logSerial(`> ${msg}`);
+                sendInput.value = '';
+            } catch (e) {
+                logSerial(`[Erro ao enviar: ${e.message}]\n`);
+            }
+        }
+    };
+</script>
+
+</body>
+</html>

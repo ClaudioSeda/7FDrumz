@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ESP32 Serial Monitor + Plotter</title>
+    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+    <style>
+        :root { --bg: #121212; --card: #1e1e1e; --accent: #00e5ff; --text: #e0e0e0; --success: #00c853; --error: #ff1744; --warning: #ff9800; }
+        body { font-family: 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); padding: 20px; display: flex; flex-direction: column; align-items: center; min-height: 100vh; margin: 0; }
+        .container { background: var(--card); padding: 30px; border-radius: 8px; width: 100%; max-width: 1600px; box-shadow: 0 8px 16px rgba(0,0,0,0.6); border: 1px solid #333; margin-bottom: 20px; }
+        h1 { border-bottom: 2px solid var(--accent); padding-bottom: 10px; margin-top: 0; color: var(--accent); font-size: 1.5rem; text-transform: uppercase; letter-spacing: 1px; }
+        
+        .controls { display: grid; grid-template-columns: 200px 1fr auto; gap: 15px; margin-bottom: 20px; align-items: end; }
+        
+        label { display: block; margin-bottom: 5px; font-size: 0.85rem; color: #aaa; font-weight: bold; }
+        select { width: 100%; padding: 10px; background: #2a2a2a; border: 1px solid #444; color: #fff; border-radius: 4px; box-sizing: border-box; }
+        select:focus { border-color: var(--accent); outline: none; }
+        
+        button { width: 100%; padding: 12px; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; text-transform: uppercase; transition: 0.2s; font-size: 0.9rem; }
+        
+        #btnConnect { background: #333; color: var(--success); border: 1px solid var(--success); }
+        #btnConnect:hover { background: rgba(0, 200, 83, 0.1); }
+        #btnConnect.active { background: var(--success); color: #000; }
+        
+        #btnTogglePlotter { background: #333; color: var(--accent); border: 1px solid var(--accent); padding: 12px 20px; }
+        #btnTogglePlotter:hover { background: rgba(0, 229, 255, 0.1); }
+        #btnTogglePlotter.active { background: var(--accent); color: #000; }
+        
+        #serialOutput { background: #000; font-family: 'Consolas', monospace; padding: 15px; height: 1200px; overflow-y: auto; font-size: 0.9rem; border: 1px solid #333; border-radius: 4px; color: #00e5ff; white-space: pre-wrap; margin-bottom: 15px; word-wrap: break-word; }
+        
+        #plotterContainer { background: #1e1e1e; border: 1px solid #444; border-radius: 4px; margin-bottom: 15px; padding: 10px; display: none; }
+        #plotterContainer.visible { display: block; }
+        
+        .action-buttons { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr; gap: 10px; margin-bottom: 15px; }
+        
+        input[type="text"] { width: 100%; padding: 10px; background: #2a2a2a; border: 1px solid #444; color: #fff; border-radius: 4px; box-sizing: border-box; }
+        input[type="text"]:focus { border-color: var(--accent); outline: none; }
+        input[type="text"]:disabled { background: #1a1a1a; color: #666; cursor: not-allowed; }
+        
+        .btn-reset { background: #333; color: var(--accent); border: 1px solid var(--accent); }
+        .btn-reset:hover { background: rgba(0, 229, 255, 0.1); }
+        .btn-reset:disabled { background: #222; color: #555; border-color: #333; cursor: not-allowed; }
+        
+        .btn-copy { background: #333; color: var(--warning); border: 1px solid var(--warning); }
+        .btn-copy:hover { background: rgba(255, 152, 0, 0.1); }
+        .btn-copy.copied { background: var(--success); color: #000; border-color: var(--success); }
+        
+        .btn-clear { background: #333; color: var(--error); border: 1px solid var(--error); }
+        .btn-clear:hover { background: rgba(255, 23, 68, 0.1); }
+        
+        .status { font-size: 0.85rem; color: #888; margin-top: 10px; text-align: center; }
+        .status.connected { color: var(--success); }
+        .status.error { color: var(--error); }
+        
+        .plotter-info { background: rgba(0, 229, 255, 0.1); border: 1px solid var(--accent); border-radius: 4px; padding: 10px; margin-bottom: 15px; font-size: 0.85rem; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>📟 7F TECNOLOGIA - Serial Monitor/Plotter</h1>
+    
+    <div class="controls">
+        <div>
+            <label>Baud Rate</label>
+            <select id="baudRate">
+                <option value="9600">9600</option>
+                <option value="57600">57600</option>
+                <option value="115200" selected>115200</option>
+                <option value="230400">230400</option>
+                <option value="460800">460800</option>
+                <option value="921600">921600</option>
+            </select>
+        </div>
+        <div>
+            <button id="btnConnect">▶️ Conectar</button>
+        </div>
+        <div>
+            <button id="btnTogglePlotter">📊 Plotter</button>
+        </div>
+    </div>
+    
+    <div id="plotterContainer">
+        <div class="plotter-info">
+            <strong>💡 Como usar o Plotter:</strong><br>
+            O plotter detecta automaticamente números no Serial. Formatos suportados:<br>
+            • <code>valor</code> → Plota um valor<br>
+            • <code>valor1,valor2,valor3</code> → Plota múltiplas variáveis (separadas por vírgula)<br>
+            • <code>label:valor</code> → Plota com nome customizado
+        </div>
+        <div id="plot" style="width: 100%; height: 400px;"></div>
+    </div>
+    
+    <div id="serialOutput">Aguardando conexão...</div>
+    
+    <div class="action-buttons">
+        <input type="text" id="sendInput" placeholder="Digite e pressione Enter para enviar..." disabled>
+        <button class="btn-reset" id="btnReset" disabled>🔄 Reset</button>
+        <button class="btn-copy" id="btnCopy">📋 Copiar</button>
+        <button class="btn-clear" id="btnClear">🗑️ Limpar</button>
+    </div>
+    
+    <div class="status" id="status">Desconectado</div>
+</div>
+
+<script>
+    let monitorPort = null;
+    let monitorReader = null;
+    let monitorWriter = null;
+    let isMonitoring = false;
+    let fullLog = '';
+    
+    // Plotter data
+    let plotterEnabled = false;
+    let plotData = {};
+    let plotTimestamps = [];
+    let maxDataPoints = 500;
+    let plotInitialized = false;
+
+    const serialOutput = document.getElementById('serialOutput');
+    const btnConnect = document.getElementById('btnConnect');
+    const btnReset = document.getElementById('btnReset');
+    const btnCopy = document.getElementById('btnCopy');
+    const btnClear = document.getElementById('btnClear');
+    const btnTogglePlotter = document.getElementById('btnTogglePlotter');
+    const sendInput = document.getElementById('sendInput');
+    const statusDiv = document.getElementById('status');
+    const plotterContainer = document.getElementById('plotterContainer');
+
+    const logSerial = (msg) => {
+        fullLog += msg;
+        serialOutput.innerHTML += msg;
+        serialOutput.scrollTop = serialOutput.scrollHeight;
+        
+        // Parse for plotter
+        if (plotterEnabled) {
+            parseForPlotter(msg);
+        }
+    };
+    
+    const setStatus = (msg, type = '') => {
+        statusDiv.textContent = msg;
+        statusDiv.className = 'status ' + type;
+    };
+
+    // ==================== PLOTTER ====================
+    btnTogglePlotter.onclick = () => {
+        plotterEnabled = !plotterEnabled;
+        
+        if (plotterEnabled) {
+            plotterContainer.classList.add('visible');
+            btnTogglePlotter.classList.add('active');
+            btnTogglePlotter.textContent = "📊 Ocultar Plotter";
+            initPlot();
+        } else {
+            plotterContainer.classList.remove('visible');
+            btnTogglePlotter.classList.remove('active');
+            btnTogglePlotter.textContent = "📊 Mostrar Plotter";
+        }
+    };
+    
+    function initPlot() {
+        if (plotInitialized) return;
+        
+        const layout = {
+            paper_bgcolor: '#1e1e1e',
+            plot_bgcolor: '#0a0a0a',
+            font: { color: '#e0e0e0' },
+            xaxis: { 
+                title: 'Tempo (s)', 
+                gridcolor: '#2a2a2a',
+                color: '#e0e0e0',
+                zerolinecolor: '#444'
+            },
+            yaxis: { 
+                title: 'Valor', 
+                gridcolor: '#2a2a2a',
+                color: '#e0e0e0',
+                zerolinecolor: '#444'
+            },
+            margin: { t: 30, r: 30, b: 50, l: 60 },
+            showlegend: true,
+            legend: { 
+                bgcolor: '#1e1e1e',
+                bordercolor: '#444',
+                borderwidth: 1,
+                font: { color: '#e0e0e0' }
+            }
+        };
+        
+        const config = {
+            responsive: true,
+            displayModeBar: true,
+            modeBarButtonsToRemove: ['toImage'],
+            displaylogo: false
+        };
+        
+        Plotly.newPlot('plot', [], layout, config);
+        plotInitialized = true;
+    }
+    
+    function parseForPlotter(text) {
+        const lines = text.split('\n');
+        
+        lines.forEach(line => {
+            line = line.trim();
+            if (!line || line.startsWith('[') || line.startsWith('>')) return;
+            
+            // Formato: "label:valor" ou "valor1,valor2,valor3" ou "valor"
+            if (line.includes(':')) {
+                // Formato com label
+                const parts = line.split(':');
+                const label = parts[0].trim();
+                const valueStr = parts[1].trim();
+                const value = parseFloat(valueStr);
+                
+                if (!isNaN(value)) {
+                    addPlotPoint(label, value);
+                }
+            } else if (line.includes(',')) {
+                // Múltiplos valores separados por vírgula
+                const values = line.split(',');
+                values.forEach((val, idx) => {
+                    const value = parseFloat(val.trim());
+                    if (!isNaN(value)) {
+                        addPlotPoint(`Var${idx + 1}`, value);
+                    }
+                });
+            } else {
+                // Valor único
+                const value = parseFloat(line);
+                if (!isNaN(value)) {
+                    addPlotPoint('Valor', value);
+                }
+            }
+        });
+    }
+    
+    function addPlotPoint(label, value) {
+        if (!plotData[label]) {
+            plotData[label] = {
+                x: [],
+                y: [],
+                name: label,
+                mode: 'lines',
+                line: { width: 2 }
+            };
+        }
+        
+        const timestamp = plotTimestamps.length > 0 ? 
+            plotTimestamps[plotTimestamps.length - 1] + 0.1 : 0;
+        
+        plotData[label].x.push(timestamp);
+        plotData[label].y.push(value);
+        
+        // Limita pontos
+        if (plotData[label].x.length > maxDataPoints) {
+            plotData[label].x.shift();
+            plotData[label].y.shift();
+        }
+        
+        plotTimestamps.push(timestamp);
+        if (plotTimestamps.length > maxDataPoints) {
+            plotTimestamps.shift();
+        }
+        
+        updatePlot();
+    }
+    
+    function updatePlot() {
+        const traces = Object.values(plotData);
+        if (traces.length > 0) {
+            const layout = {
+                paper_bgcolor: '#1e1e1e',
+                plot_bgcolor: '#0a0a0a',
+                font: { color: '#e0e0e0' },
+                xaxis: { 
+                    title: 'Tempo (s)', 
+                    gridcolor: '#2a2a2a',
+                    color: '#e0e0e0',
+                    zerolinecolor: '#444'
+                },
+                yaxis: { 
+                    title: 'Valor', 
+                    gridcolor: '#2a2a2a',
+                    color: '#e0e0e0',
+                    zerolinecolor: '#444'
+                },
+                margin: { t: 30, r: 30, b: 50, l: 60 },
+                showlegend: true,
+                legend: { 
+                    bgcolor: '#1e1e1e',
+                    bordercolor: '#444',
+                    borderwidth: 1,
+                    font: { color: '#e0e0e0' }
+                }
+            };
+            
+            Plotly.react('plot', traces, layout);
+        }
+    }
+    
+    function clearPlotData() {
+        plotData = {};
+        plotTimestamps = [];
+        if (plotInitialized) {
+            Plotly.purge('plot');
+            initPlot();
+        }
+    }
+
+    // ==================== CONNECT/DISCONNECT ====================
+    btnConnect.onclick = async () => {
+        if (!navigator.serial) {
+            alert("❌ Navegador incompatível. Use Chrome ou Edge Desktop.");
+            return;
+        }
+
+        if (isMonitoring) {
+            // Desconectar
+            isMonitoring = false;
+            
+            if (monitorReader) {
+                try { 
+                    await monitorReader.cancel();
+                    monitorReader.releaseLock();
+                } catch {}
+            }
+            if (monitorWriter) {
+                try { await monitorWriter.close(); } catch {}
+            }
+            if (monitorPort) {
+                try { 
+                    await new Promise(resolve => setTimeout(resolve, 100));
+                    await monitorPort.close(); 
+                } catch {}
+            }
+            
+            btnConnect.innerText = "▶️ Conectar";
+            btnConnect.classList.remove('active');
+            sendInput.disabled = true;
+            btnReset.disabled = true;
+            logSerial("\n[Monitor desconectado]\n");
+            setStatus("Desconectado");
+            
+            monitorPort = null;
+            monitorReader = null;
+            monitorWriter = null;
+            return;
+        }
+
+        try {
+            monitorPort = await navigator.serial.requestPort();
+            const baud = parseInt(document.getElementById('baudRate').value);
+            
+            await monitorPort.open({ baudRate: baud });
+            
+            serialOutput.innerHTML = '';
+            fullLog = '';
+            clearPlotData();
+            logSerial(`[Conectado em ${baud} baud]\n`);
+            logSerial(`[Aguardando dados...]\n\n`);
+            setStatus(`Conectado (${baud} baud)`, 'connected');
+            
+            isMonitoring = true;
+            btnConnect.innerText = "⏹️ Desconectar";
+            btnConnect.classList.add('active');
+            sendInput.disabled = false;
+            btnReset.disabled = false;
+            
+            await new Promise(resolve => setTimeout(resolve, 500));
+            
+            monitorReader = monitorPort.readable.getReader();
+            monitorWriter = monitorPort.writable.getWriter();
+            
+            const decoder = new TextDecoder();
+            
+            (async () => {
+                try {
+                    while (isMonitoring) {
+                        const { value, done } = await monitorReader.read();
+                        if (done || !isMonitoring) break;
+                        
+                        const text = decoder.decode(value);
+                        logSerial(text);
+                    }
+                } catch (e) {
+                    if (isMonitoring) {
+                        logSerial(`\n[Erro: ${e.message}]\n`);
+                        setStatus("Erro na leitura", 'error');
+                    }
+                } finally {
+                    try { monitorReader.releaseLock(); } catch {}
+                }
+            })();
+            
+        } catch (e) {
+            logSerial(`\n[Erro ao conectar: ${e.message}]\n`);
+            setStatus("Erro ao conectar", 'error');
+            isMonitoring = false;
+            btnConnect.innerText = "▶️ Conectar";
+            btnConnect.classList.remove('active');
+        }
+    };
+
+    // ==================== RESET ====================
+    btnReset.onclick = async () => {
+        if (!monitorPort) return;
+        
+        try {
+            logSerial("\n[Resetando ESP32...]\n");
+            
+            await monitorPort.setSignals({ dataTerminalReady: false });
+            await new Promise(resolve => setTimeout(resolve, 100));
+            await monitorPort.setSignals({ requestToSend: true });
+            await new Promise(resolve => setTimeout(resolve, 100));
+            await monitorPort.setSignals({ requestToSend: false });
+            
+            await new Promise(resolve => setTimeout(resolve, 500));
+            logSerial("[ESP32 reiniciado]\n\n");
+        } catch (e) {
+            logSerial(`[Erro ao resetar: ${e.message}]\n`);
+        }
+    };
+
+    // ==================== COPY ====================
+    btnCopy.onclick = async () => {
+        try {
+            await navigator.clipboard.writeText(fullLog);
+            
+            const originalText = btnCopy.textContent;
+            btnCopy.textContent = "✓ Copiado!";
+            btnCopy.classList.add('copied');
+            
+            setTimeout(() => {
+                btnCopy.textContent = originalText;
+                btnCopy.classList.remove('copied');
+            }, 2000);
+            
+        } catch (e) {
+            alert("Erro ao copiar: " + e.message);
+        }
+    };
+
+    // ==================== CLEAR ====================
+    btnClear.onclick = () => {
+        serialOutput.innerHTML = "";
+        fullLog = "";
+        clearPlotData();
+    };
+
+    // ==================== SEND ====================
+    sendInput.onkeypress = async (e) => {
+        if (e.key === 'Enter' && sendInput.value.trim()) {
+            const msg = sendInput.value + '\n';
+            try {
+                const encoder = new TextEncoder();
+                await monitorWriter.write(encoder.encode(msg));
+                logSerial(`> ${msg}`);
+                sendInput.value = '';
+            } catch (e) {
+                logSerial(`[Erro ao enviar: ${e.message}]\n`);
+            }
+        }
+    };
+</script>
+
+</body>
+</html>
