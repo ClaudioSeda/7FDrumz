@@ -1,0 +1,4 @@
+Normalize:PeakLevel="-1"
+Stereo to Mono:
+TruncateSilence:
+ExportWAV:Filename="<Path>" Channels="1" SampleRate="44100" SampleFormat="16"
